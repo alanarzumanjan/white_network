@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: whiternet_postgres
+    environment:
+      POSTGRES_DB: ${DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${DATABASE}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - whiternet_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: whiternet_backend
+    env_file:
+      - ./backend/.env
+    environment:
+      TZ: Europe/Riga
+      ASPNETCORE_URLS: http://+:5000
+      ASPNETCORE_ENVIRONMENT: Production
+      POSTGRES_CONNECTION_STRING: "Host=postgres;Port=5432;Database=${DATABASE};Username=${POSTGRES_USER};Password=${PASSWORD};SSL Mode=Disable;Include Error Detail=true;"
+      ALLOWED_FRONTEND_ORIGINS: ${ALLOWED_FRONTEND_ORIGINS:-https://whiternet.net,https://www.whiternet.net}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-5000}:5000"
+    restart: unless-stopped
+    networks:
+      - whiternet_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: docker/Dockerfile
+    container_name: whiternet_frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    networks:
+      - whiternet_network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/index.html",
+        ]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  cloudflared:
+    build:
+      context: .
+      dockerfile: cloudflared.Dockerfile
+    container_name: whiternet_cloudflared
+    restart: unless-stopped
+    user: "0"
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - whiternet_network
+    # network_mode: host
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    cap_add:
+      - NET_ADMIN
+
+volumes:
+  pgdata:
+
+networks:
+  whiternet_network:
+    driver: bridge
