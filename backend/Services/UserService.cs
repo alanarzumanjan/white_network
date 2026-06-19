@@ -88,10 +88,10 @@ public sealed class UserService
 
         if (!string.IsNullOrWhiteSpace(dto.name))
             user.Username = dto.name;
-        if (!string.IsNullOrWhiteSpace(dto.phone))
-            user.Phone = EncryptionService.Encrypt(dto.phone) ?? user.Phone;
+if (!string.IsNullOrWhiteSpace(dto.phone))
+            user.AvatarUrl = EncryptionService.Encrypt(dto.phone) ?? user.AvatarUrl;
         if (dto.address != null)
-            user.Address = dto.address;
+            user.Bio = dto.address;
         if (!string.IsNullOrWhiteSpace(dto.role) && Enum.TryParse<UserRole>(dto.role, out var roleEnum))
             user.Role = roleEnum;
 
@@ -142,8 +142,8 @@ public sealed class UserService
         Id = user.Id,
         Username = user.Username,
         Email = TryDecrypt(user.Email),
-        Phone = TryDecrypt(user.Phone),
-        Address = user.Address,
+Phone = null,
+        Address = null,
         Role = user.Role,
         CreatedAt = user.CreatedAt
     };

@@ -112,14 +112,14 @@ public class AuthController : ControllerBase
                 return BadRequest(new { error = "Username or email already in use." });
 
             // Validate and default role
-            var allowedRoles = new[] { nameof(UserRole.user), nameof(UserRole.shelter) };
-            UserRole role = UserRole.user; // default
+            var allowedRoles = new[] { nameof(UserRole.Member), nameof(UserRole.Admin), nameof(UserRole.Moderator) };
+            UserRole role = UserRole.Member; // default
             if (!string.IsNullOrWhiteSpace(user.role))
             {
                 var requestedRole = user.role.ToLowerInvariant();
-                role = allowedRoles.Contains(requestedRole)
-                    ? Enum.Parse<UserRole>(requestedRole)
-                    : UserRole.user;
+role = allowedRoles.Any(r => r.Equals(requestedRole, StringComparison.OrdinalIgnoreCase))
+                    ? Enum.Parse<UserRole>(requestedRole, ignoreCase: true)
+                    : UserRole.Member;
             }
 
             var newUser = new User
@@ -148,10 +148,9 @@ public class AuthController : ControllerBase
             await db.Users.AddAsync(newUser, ct);
             await db.SaveChangesAsync(ct);
 
-            if (role == UserRole.shelter)
+            if (role == UserRole.Admin || role == UserRole.Moderator)
             {
-                await _shelterService.EnsureUserShelterAsync(newUser.Id, null);
-                _logger.LogInformation("> Auto-created shelter for new user {UserId} with role {Role}", newUser.Id, role);
+                _logger.LogInformation("> New privileged user registered {UserId} role {Role}", newUser.Id, role);
             }
 
             await transaction.CommitAsync(ct);
@@ -243,8 +242,8 @@ public class AuthController : ControllerBase
 
             try
             {
-                if (!string.IsNullOrWhiteSpace(user.Phone))
-                    decryptedPhone = EncryptionService.Decrypt(user.Phone);
+if (!string.IsNullOrWhiteSpace(user.AvatarUrl))
+                    decryptedPhone = EncryptionService.Decrypt(user.AvatarUrl);
             }
             catch { }
 
