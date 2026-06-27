@@ -23,13 +23,11 @@ public class User
     [MaxLength(255)]
     public string? AvatarUrl { get; set; }
 
-    // Литературная карма (основная фишка проекта)
     public int KarmaScore { get; set; } = 0;
 
     public UserRole Role { get; set; } = UserRole.Member;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    // Навигационные свойства
     public ICollection<Post> Posts { get; set; } = new List<Post>();
     public ICollection<Comment> Comments { get; set; } = new List<Comment>();
     public ICollection<KarmaTransaction> KarmaHistory { get; set; } = new List<KarmaTransaction>();
@@ -89,7 +87,6 @@ public class Post
     public Guid AuthorId { get; set; }
     public User Author { get; set; } = null!;
 
-    // Если пост в клубе. Если null - пост в общей ленте.
     public Guid? ClubId { get; set; }
     public Club? Club { get; set; }
 
@@ -116,7 +113,6 @@ public class Comment
     public Guid PostId { get; set; }
     public Post Post { get; set; } = null!;
 
-    // Для древовидных ответов (threading)
     public Guid? ParentCommentId { get; set; }
     public Comment? ParentComment { get; set; }
     public ICollection<Comment> Replies { get; set; } = new List<Comment>();
@@ -124,10 +120,6 @@ public class Comment
     public bool IsDeleted { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
-
-// ==========================================
-// 2. КОММУНИКАЦИЯ: ЧАТЫ И ЗВОНКИ (ЭТАП 3)
-// ==========================================
 
 public class Conversation
 {
@@ -200,10 +192,6 @@ public enum CallType
     Video
 }
 
-// ==========================================
-// 3. ВАЖНЫЕ НОВОСТИ (АГРЕГАТОР)
-// ==========================================
-
 public class NewsItem
 {
     [Key]
@@ -215,17 +203,13 @@ public class NewsItem
     public string Content { get; set; } = string.Empty;
 
     [MaxLength(50)]
-    public string Category { get; set; } = string.Empty; // Наука, Технологии, Культура
+    public string Category { get; set; } = string.Empty;
 
     [MaxLength(500)]
     public string SourceUrl { get; set; } = string.Empty;
 
     public DateTime PublishedAt { get; set; } = DateTime.UtcNow;
 }
-
-// ==========================================
-// 4. ГЕЙМИФИКАЦИЯ И МОДЕРАЦИЯ
-// ==========================================
 
 public class Vote
 {
@@ -235,10 +219,10 @@ public class Vote
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
 
-    public Guid EntityId { get; set; } // ID Поста или Комментория
-    public string EntityType { get; set; } = string.Empty; // "Post" или "Comment"
+    public Guid EntityId { get; set; }
+    public string EntityType { get; set; } = string.Empty;
 
-    public int Value { get; set; } // 1 (апвот) или -1 (даунвот)
+    public int Value { get; set; }
 }
 
 public class KarmaTransaction
@@ -249,7 +233,7 @@ public class KarmaTransaction
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
 
-    public int Amount { get; set; } // +5, -10 и т.д.
+    public int Amount { get; set; }
 
     public KarmaReason Reason { get; set; }
 
@@ -260,9 +244,9 @@ public enum KarmaReason
 {
     PostUpvoted,
     CommentUpvoted,
-    LiteraryWordUsed, // ИИ поощрил за красивое слово
-    NobleDeed,        // Помощь, благодарность
-    ToxicityPenalty,  // Штраф за попытку написать мат
+    LiteraryWordUsed,
+    NobleDeed,
+    ToxicityPenalty,
     AdminAdjustment
 }
 
@@ -274,11 +258,11 @@ public class ModerationLog
     public Guid UserId { get; set; }
     public User User { get; set; } = null!;
 
-    public string EntityType { get; set; } = string.Empty; // Post, Comment, Message
+    public string EntityType { get; set; } = string.Empty;
     public Guid EntityId { get; set; }
 
     public string OriginalText { get; set; } = string.Empty;
-    public string AIAnalysis { get; set; } = string.Empty; // Что нашел ИИ
+    public string AIAnalysis { get; set; } = string.Empty;
 
     public ModerationAction ActionTaken { get; set; }
 
@@ -289,7 +273,7 @@ public enum ModerationAction
 {
     Approved,
     Blocked,
-    EditedByAI, // ИИ сам заменил мат на синоним
+    EditedByAI,
     FlaggedForHumanReview
 }
 
@@ -304,7 +288,7 @@ public class Notification
     public NotificationType Type { get; set; }
     public string Message { get; set; } = string.Empty;
 
-    public Guid? RelatedEntityId { get; set; } // ID поста/комментария, к которому относится уведомление
+    public Guid? RelatedEntityId { get; set; }
 
     public bool IsRead { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -320,3 +304,4 @@ public enum NotificationType
     KarmaIncreased,
     SystemAnnouncement
 }
+
