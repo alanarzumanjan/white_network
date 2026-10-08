@@ -17,6 +17,20 @@ services:
       retries: 10
     networks:
       - whiternet_network
+    
+  redis:
+    image: redis:7-alpine
+    container_name: whiternet_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - whiternet_network
 
   backend:
     build:
@@ -32,8 +46,11 @@ services:
       POSTGRES_CONNECTION_STRING: "Host=postgres;Port=5432;Database=${DATABASE};Username=${POSTGRES_USER};Password=${PASSWORD};SSL Mode=Disable;Include Error Detail=true;"
       ALLOWED_FRONTEND_ORIGINS: ${ALLOWED_FRONTEND_ORIGINS:-https://whiternet.net,https://www.whiternet.net}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      REDIS_CONNECTION_STRING: redis:6379
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "${PORT:-5000}:5000"
@@ -89,6 +106,7 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
 
 networks:
   whiternet_network:

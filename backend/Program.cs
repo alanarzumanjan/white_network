@@ -1,8 +1,13 @@
 using System.Text;
+using Config;
 using Data;
 using DotNetEnv;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Services;
+using Services.Redis;
+using StackExchange.Redis;
 
 Console.OutputEncoding = Encoding.UTF8;
 
@@ -70,33 +75,59 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 builder.Services.AddScoped<IContentService, ContentService>();
 builder.Services.AddHealthChecks();
 builder.Services.AddAntiforgery();
-// JWT Authentication
-var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY");
-var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER");
-var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE");
 
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = "Bearer";
-    options.DefaultChallengeScheme = "Bearer";
-})
-.AddJwtBearer("Bearer", options =>
-{
-    options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+// JWT Authentication
+var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddSingleton<JwtService>();
+builder.Services.AddSingleton<PasswordHashingService>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtIssuer,
-        ValidAudience = jwtAudience,
-        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
-            System.Text.Encoding.UTF8.GetBytes(jwtKey!)
-        )
-    };
-});
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key)),
+            ValidateIssuer = jwtSettings.Issuer != null,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidateAudience = jwtSettings.Audience != null,
+            ValidAudience = jwtSettings.Audience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = ctx =>
+            {
+                if (ctx.Principal?.FindFirst("token_type")?.Value == "refresh")
+                    ctx.Fail("Refresh token cannot be used as access token.");
+                return Task.CompletedTask;
+            }
+        };
+    });
 
 builder.Services.AddAuthorization();
+
+// Redis
+var redisConnection = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING") ?? "localhost6379";
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+{
+    var options = ConfigurationOptions.Parse(redisConnection);
+    options.AbortOnConnectFail = false;
+    return ConnectionMultiplexer.Connect(options);
+});
+
+builder.Services.AddSingleton<IRedisService, RedisService>();
+
+builder.Services.AddScoped<UserEmailService>();
+builder.Services.AddScoped<UserService>();
+
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 // CORS
 var allowedOriginsRaw = Environment.GetEnvironmentVariable("ALLOWED_FRONTEND_ORIGINS");
 
@@ -145,9 +176,8 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
+app.UseExceptionHandler();
 app.UseCors("FrontendOnly");
-app.UseExceptionHandler(options => { });
-app.UseAntiforgery();
 
 app.UseMiddleware<SwaggerAuth>();
 app.UseSwagger();
@@ -159,6 +189,7 @@ app.UseSwaggerUI(c =>
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 app.MapHealthChecks("/health");
 app.MapControllers();

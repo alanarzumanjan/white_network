@@ -73,12 +73,17 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> Patch(Guid id, [FromBody] UserUpdateDto dto, CancellationToken ct)
     {
         var currentUserId = GetCurrentUserId();
+
         if (currentUserId == null)
             return Unauthorized();
         if (currentUserId != id && !User.IsInRole("admin"))
             return Forbid();
 
+        if(!string.IsNullOrWhiteSpace(dto.role) && !User.IsInRole("admin"))
+            return Forbid();
+
         var result = await _userService.UpdateAsync(id, dto, ct);
+        
         return result switch
         {
             UserService.UpdateResult.NotFound => NotFound(new { error = "User not found." }),
