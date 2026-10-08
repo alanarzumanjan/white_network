@@ -25,6 +25,7 @@
 *.env
 *.env.local
 *.env.*.local
+!.env.example
 deploy_key
 deploy_key.pub
 

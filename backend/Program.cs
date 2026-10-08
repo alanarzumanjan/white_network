@@ -8,13 +8,20 @@ using Microsoft.IdentityModel.Tokens;
 using Services;
 using Services.Redis;
 using StackExchange.Redis;
+using System.Net;
+using Microsoft.AspNetCore.HttpOverrides;
 
 Console.OutputEncoding = Encoding.UTF8;
 
 // Load .env file
-var solutionRoot = Directory.GetParent(Directory.GetCurrentDirectory())!.FullName;
-Env.Load(Path.Combine(solutionRoot, ".env"));
-Console.WriteLine("✅ .env loaded from: " + Path.Combine(solutionRoot, ".env"));
+var envPath = Path.Combine(Directory.GetParent(Directory.GetCurrentDirectory())!.FullName, ".env");
+if (File.Exists(envPath))
+{
+    Env.Load(envPath);
+    Console.WriteLine("✅ .env loaded from: " + envPath);
+}
+else Console.WriteLine("ℹ️ .env not found, using environment variables");
+
 
 // Security configuration (required by EncryptionService)
 var encryptionKey = Environment.GetEnvironmentVariable("ENCRYPTION_KEY");
@@ -156,6 +163,19 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    options.ForwardedForHeaderName = "CF-Connecting-IP";
+    options.ForwardLimit = 1;
+    options.KnownProxies.Clear();
+    options.KnownNetworks.Clear();
+
+    var cidr = (Environment.GetEnvironmentVariable("TRUSTED_PROXY_NETWORK") ?? "172.28.0.0/16").Split('/');
+    options.KnownNetworks.Add(
+        new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse(cidr[0]), int.Parse(cidr[1])));
+});
+
 var app = builder.Build();
 
 // Apply DB schema on startup (ensures Subscribers table exists)
@@ -175,7 +195,7 @@ using (var scope = app.Services.CreateScope())
         throw;
     }
 }
-
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseCors("FrontendOnly");
 
