@@ -1,12 +1,16 @@
 # Build outputs
+
 **/bin/
 **/obj/
 **/out/
 .cloudflared
+
 # Dependencies
+
 **/node_modules/
 
 # IDE
+
 .vscode/
 .idea/
 *.suo
@@ -17,13 +21,16 @@
 .DS_Store
 
 # Secrets
+
 *.env
 *.env.local
 *.env.*.local
+!.env.example
 deploy_key
 deploy_key.pub
 
 # Logs
+
 logs/
 *.log
 npm-debug.log*
@@ -32,14 +39,19 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Test results
+
 **/TestResults/
 **/coverage/
 
 # Frontend build
+
 frontend/dist/
 frontend/dist-ssr/
 frontend/*.local
+frontend/package-lock.json
+frontend/package.json
 
 # Misc
+
 *.tmp
 *.temp

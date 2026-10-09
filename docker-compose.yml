@@ -7,11 +7,25 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${PASSWORD}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"   # только localhost (для DBeaver через SSH-туннель)
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${DATABASE}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - whiternet_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: whiternet_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -24,22 +38,23 @@ services:
       dockerfile: Dockerfile
     container_name: whiternet_backend
     env_file:
-      - ./backend/.env
+      - .env
     environment:
       TZ: Europe/Riga
       ASPNETCORE_URLS: http://+:5000
       ASPNETCORE_ENVIRONMENT: Production
-      POSTGRES_CONNECTION_STRING: "Host=postgres;Port=5432;Database=${DATABASE};Username=${POSTGRES_USER};Password=${PASSWORD};SSL Mode=Disable;Include Error Detail=true;"
-      ALLOWED_FRONTEND_ORIGINS: ${ALLOWED_FRONTEND_ORIGINS:-https://whiternet.net,https://www.whiternet.net}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      POSTGRES_CONNECTION_STRING: "Host=postgres;Port=5432;Database=${DATABASE};Username=${POSTGRES_USER};Password=${PASSWORD};SSL Mode=Disable;"
+      REDIS_CONNECTION_STRING: redis:6379
+      TRUSTED_PROXY_NETWORK: ${DOCKER_SUBNET:-172.28.0.0/16}
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${PORT:-5000}:5000"
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - whiternet_network
+    # ports убраны: backend доступен только из docker-сети (cloudflared)
 
   frontend:
     build:
@@ -49,47 +64,40 @@ services:
     depends_on:
       - backend
     ports:
-      - "8081:80"
+      - "127.0.0.1:8081:80"
     restart: unless-stopped
     networks:
       - whiternet_network
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--quiet",
-          "--tries=1",
-          "--spider",
-          "http://localhost/index.html",
-        ]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/index.html"]
       interval: 30s
       timeout: 3s
       start_period: 10s
       retries: 3
 
   cloudflared:
-    build:
-      context: .
-      dockerfile: cloudflared.Dockerfile
+    image: cloudflare/cloudflared:1966-18cdfe0a6fc7
     container_name: whiternet_cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
     restart: unless-stopped
-    user: "0"
     depends_on:
       - frontend
       - backend
     networks:
       - whiternet_network
-    # network_mode: host
     dns:
       - 1.1.1.1
       - 8.8.8.8
-    cap_add:
-      - NET_ADMIN
 
 volumes:
   pgdata:
+  redisdata:
 
 networks:
   whiternet_network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.28.0.0/16}

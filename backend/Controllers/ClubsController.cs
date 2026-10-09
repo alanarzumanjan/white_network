@@ -7,7 +7,7 @@ using System.Security.Claims;
 namespace Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("/[controller]")]
 [Authorize]
 public class ClubsController : ControllerBase
 {

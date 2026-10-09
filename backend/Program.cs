@@ -1,15 +1,27 @@
 using System.Text;
+using Config;
 using Data;
 using DotNetEnv;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Services;
+using Services.Redis;
+using StackExchange.Redis;
+using System.Net;
+using Microsoft.AspNetCore.HttpOverrides;
 
 Console.OutputEncoding = Encoding.UTF8;
 
 // Load .env file
-var solutionRoot = Directory.GetParent(Directory.GetCurrentDirectory())!.FullName;
-Env.Load(Path.Combine(solutionRoot, ".env"));
-Console.WriteLine("✅ .env loaded from: " + Path.Combine(solutionRoot, ".env"));
+var envPath = Path.Combine(Directory.GetParent(Directory.GetCurrentDirectory())!.FullName, ".env");
+if (File.Exists(envPath))
+{
+    Env.Load(envPath);
+    Console.WriteLine("✅ .env loaded from: " + envPath);
+}
+else Console.WriteLine("ℹ️ .env not found, using environment variables");
+
 
 // Security configuration (required by EncryptionService)
 var encryptionKey = Environment.GetEnvironmentVariable("ENCRYPTION_KEY");
@@ -71,6 +83,58 @@ builder.Services.AddScoped<IContentService, ContentService>();
 builder.Services.AddHealthChecks();
 builder.Services.AddAntiforgery();
 
+// JWT Authentication
+var jwtSettings = JwtSettings.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddSingleton<JwtService>();
+builder.Services.AddSingleton<PasswordHashingService>();
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key)),
+            ValidateIssuer = jwtSettings.Issuer != null,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidateAudience = jwtSettings.Audience != null,
+            ValidAudience = jwtSettings.Audience,
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.Zero
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = ctx =>
+            {
+                if (ctx.Principal?.FindFirst("token_type")?.Value == "refresh")
+                    ctx.Fail("Refresh token cannot be used as access token.");
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// Redis
+var redisConnection = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING") ?? "localhost6379";
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+{
+    var options = ConfigurationOptions.Parse(redisConnection);
+    options.AbortOnConnectFail = false;
+    return ConnectionMultiplexer.Connect(options);
+});
+
+builder.Services.AddSingleton<IRedisService, RedisService>();
+
+builder.Services.AddScoped<UserEmailService>();
+builder.Services.AddScoped<UserService>();
+
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 // CORS
 var allowedOriginsRaw = Environment.GetEnvironmentVariable("ALLOWED_FRONTEND_ORIGINS");
 
@@ -99,6 +163,19 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    options.ForwardedForHeaderName = "CF-Connecting-IP";
+    options.ForwardLimit = 1;
+    options.KnownProxies.Clear();
+    options.KnownNetworks.Clear();
+
+    var cidr = (Environment.GetEnvironmentVariable("TRUSTED_PROXY_NETWORK") ?? "172.28.0.0/16").Split('/');
+    options.KnownNetworks.Add(
+        new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse(cidr[0]), int.Parse(cidr[1])));
+});
+
 var app = builder.Build();
 
 // Apply DB schema on startup (ensures Subscribers table exists)
@@ -118,10 +195,9 @@ using (var scope = app.Services.CreateScope())
         throw;
     }
 }
-
+app.UseForwardedHeaders();
+app.UseExceptionHandler();
 app.UseCors("FrontendOnly");
-app.UseExceptionHandler(options => { });
-app.UseAntiforgery();
 
 app.UseMiddleware<SwaggerAuth>();
 app.UseSwagger();
@@ -133,6 +209,7 @@ app.UseSwaggerUI(c =>
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 app.MapHealthChecks("/health");
 app.MapControllers();
