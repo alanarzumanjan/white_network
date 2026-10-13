@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${PASSWORD}
     ports:
-      - "127.0.0.1:5433:5432"   # только localhost (для DBeaver через SSH-туннель)
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -54,7 +54,6 @@ services:
     restart: unless-stopped
     networks:
       - whiternet_network
-    # ports убраны: backend доступен только из docker-сети (cloudflared)
 
   frontend:
     build:
